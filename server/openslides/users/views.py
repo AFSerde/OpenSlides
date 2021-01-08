@@ -36,6 +36,7 @@ from ..utils.auth import (
 from ..utils.autoupdate import AutoupdateElement, inform_changed_data, inform_elements
 from ..utils.cache import element_cache
 from ..utils.rest_api import (
+    APIException,
     ModelViewSet,
     Response,
     SimpleMetadata,
@@ -124,6 +125,7 @@ class UserViewSet(ModelViewSet):
         except IntegrityError as e:
             raise ValidationError({"detail": str(e)})
 
+    @transaction.atomic
     def update(self, request, *args, **kwargs):
         """
         Customized view endpoint to update an user.
@@ -202,27 +204,31 @@ class UserViewSet(ModelViewSet):
         response = super().update(request, *args, **kwargs)
 
         # after rest of the request succeeded, handle delegation changes
-        if new_delegation_ids:
+        if isinstance(new_delegation_ids, list):
             self.assert_no_self_delegation(user, new_delegation_ids)
             self.assert_vote_not_delegated(user)
 
             for id in new_delegation_ids:
-                delegation_user = User.objects.get(id=id)
+                try:
+                    delegation_user = User.objects.get(id=id)
+                except User.DoesNotExist:
+                    raise ValidationError(
+                        {
+                            "detail": f"The user {id} does not exist and cannot be set as vote delegation"
+                        }
+                    )
                 self.assert_has_no_delegated_votes(delegation_user)
                 delegation_user.vote_delegated_to = user
                 delegation_user.save()
 
-        delegations_to_remove = user.vote_delegated_from_users.exclude(
-            id__in=(new_delegation_ids or [])
-        )
-        for old_delegation_user in delegations_to_remove:
-            old_delegation_user.vote_delegated_to = None
-            old_delegation_user.save()
+            delegations_to_remove = user.vote_delegated_from_users.exclude(
+                id__in=new_delegation_ids
+            )
+            for old_delegation_user in delegations_to_remove:
+                old_delegation_user.vote_delegated_to = None
+                old_delegation_user.save()
 
-        # if only delegated_from was changed, we need an autoupdate for the operator
-        if new_delegation_ids or delegations_to_remove:
-            inform_changed_data(user)
-
+        inform_changed_data(user)
         return response
 
     def assert_vote_not_delegated(self, user):
@@ -237,7 +243,7 @@ class UserViewSet(ModelViewSet):
         if user.vote_delegated_from_users and len(user.vote_delegated_from_users.all()):
             raise ValidationError(
                 {
-                    "detail": "You cannot delegate a vote of a user who is already a delegate of another user."
+                    "detail": "You cannot delegate a delegation of vote to another user (cascading not allowed)."
                 }
             )
 
@@ -349,6 +355,8 @@ class UserViewSet(ModelViewSet):
           field: 'is_active' | 'is_present' | 'is_committee'
           value: True|False
         }
+
+        Is_active and is_committee will not be settable for non-default auth type users.
         """
         ids = request.data.get("user_ids")
         self.assert_list_of_ints(ids)
@@ -361,9 +369,12 @@ class UserViewSet(ModelViewSet):
         if not isinstance(value, bool):
             raise ValidationError({"detail": "value must be true or false"})
 
-        users = User.objects.filter(auth_type="default").filter(pk__in=ids)
+        users = User.objects.filter(pk__in=ids)
+        if field != "is_present":
+            users = users.filter(auth_type="default")
         if field == "is_active":
             users = users.exclude(pk=request.user.id)
+
         for user in users:
             setattr(user, field, value)
             user.save()
@@ -657,6 +668,7 @@ class GroupViewSet(ModelViewSet):
 
         # Delete the group
         self.perform_destroy(instance)
+        config.remove_group_id_from_all_group_configs(instance.id)
 
         # Get the updated user data from the DB.
         affected_users = User.objects.filter(pk__in=affected_users_ids)
@@ -852,9 +864,8 @@ class WhoAmIDataView(APIView):
                 self.request.user.get_collection_string(), user_id
             )
             if user_full_data is None:
-                return Response(
-                    {"detail": "Cache offline, could not fetch user"}, status=500
-                )
+                raise APIException(f"Could not find user {user_id}", 500)
+
             auth_type = user_full_data["auth_type"]
             user_data = async_to_sync(element_cache.restrict_element_data)(
                 user_full_data, self.request.user.get_collection_string(), user_id

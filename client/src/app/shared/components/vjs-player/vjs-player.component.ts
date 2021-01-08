@@ -38,13 +38,13 @@ export class VjsPlayerComponent implements OnInit, OnDestroy {
     @ViewChild('videoPlayer', { static: true })
     private videoPlayer: ElementRef;
     private _videoUrl: string;
-    private posterUrl: string;
+    public posterUrl: string;
     public player: videojs.Player;
     public isUrlOnline: boolean;
 
     @Input()
     public set videoUrl(value: string) {
-        this._videoUrl = value;
+        this._videoUrl = value.trim();
         this.checkVideoUrl();
     }
 
@@ -64,7 +64,7 @@ export class VjsPlayerComponent implements OnInit, OnDestroy {
 
     public constructor(config: ConfigService) {
         config.get<string>('general_system_stream_poster').subscribe(posterUrl => {
-            this.posterUrl = posterUrl;
+            this.posterUrl = posterUrl?.trim();
         });
     }
 
