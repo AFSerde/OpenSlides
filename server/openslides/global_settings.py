@@ -16,7 +16,6 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.staticfiles",
     "rest_framework",
-    "channels",
     "openslides.agenda",
     "openslides.topics",
     "openslides.motions",
@@ -24,7 +23,7 @@ INSTALLED_APPS = [
     "openslides.mediafiles",
 ]
 
-INSTALLED_PLUGINS = collect_plugins()  # Adds all automaticly collected plugins
+INSTALLED_PLUGINS = collect_plugins()  # Adds all automatically collected plugins
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -34,7 +33,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "openslides.utils.autoupdate.AutoupdateBundleMiddleware",
+    "openslides.utils.autoupdate_bundle.AutoupdateBundleMiddleware",
 ]
 
 ROOT_URLCONF = "openslides.urls"
@@ -120,14 +119,6 @@ PASSWORD_HASHERS = [
 # https://docs.djangoproject.com/en/1.10/topics/files/
 
 MEDIA_URL = "/media/"
-
-
-# Django Channels
-# http://channels.readthedocs.io/en/latest/
-
-ASGI_APPLICATION = "openslides.routing.application"
-
-CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
 
 # Enable updating the last_login field for users on every login.
